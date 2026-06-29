@@ -52,6 +52,14 @@ const SUBELEMENT_LABELS = {
   '5.2': 'Evaluasi Terpisah'
 };
 
+const SUBELEMENT_PARAMETERS = {
+  '1.1': 1, '1.2': 1, '1.3': 1, '1.4': 1, '1.5': 1, '1.6': 2, '1.7': 1, '1.8': 2,
+  '2.1': 3, '2.2': 5,
+  '3.1': 1, '3.2': 1, '3.3': 1, '3.4': 1, '3.5': 1, '3.6': 1, '3.7': 1, '3.8': 1, '3.9': 1, '3.10': 1, '3.11': 1,
+  '4.1': 4, '4.2': 1,
+  '5.1': 3, '5.2': 2
+};
+
 const GRADE_LEVELS = {
   E: 'Lvl 1 (Rintisan)',
   D: 'Lvl 2 (Berkembang)',
@@ -68,9 +76,10 @@ const GRADE_COLORS = {
   A: 'bg-emerald-50 text-emerald-700 border-emerald-150'
 };
 
-export default function VerificationPanel({ profile }) {
+export default function VerificationPanel({ profile, selectedYear }) {
   const [activePillar, setActivePillar] = useState('T1');
   const [activeSubelement, setActiveSubelement] = useState('1.1');
+  const [activeParameter, setActiveParameter] = useState(1);
   const [opdList, setOpdList] = useState([]);
   const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -91,8 +100,12 @@ export default function VerificationPanel({ profile }) {
   }, [userRole]);
 
   useEffect(() => {
+    setActiveParameter(1);
+  }, [activeSubelement]);
+
+  useEffect(() => {
     fetchOPDsAndAssessments();
-  }, [activePillar, activeSubelement]);
+  }, [activePillar, activeSubelement, activeParameter, selectedYear]);
 
   const fetchOPDsAndAssessments = async () => {
     try {
@@ -110,10 +123,10 @@ export default function VerificationPanel({ profile }) {
       const { data: asses, error: assesErr } = await supabase
         .from('trx_subelement_assessment')
         .select('*')
-        .eq('fiscal_year', 2026)
+        .eq('fiscal_year', selectedYear)
         .eq('pillar_type', activePillar)
         .eq('subelement_code', activeSubelement)
-        .eq('parameter_no', 1);
+        .eq('parameter_no', activeParameter);
       if (assesErr) throw assesErr;
       setAssessments(asses || []);
 
@@ -139,10 +152,10 @@ export default function VerificationPanel({ profile }) {
 
       const payload = {
         opd_id: opd.id,
-        fiscal_year: 2026,
+        fiscal_year: selectedYear,
         pillar_type: activePillar,
         subelement_code: activeSubelement,
-        parameter_no: 1,
+        parameter_no: activeParameter,
         verified_grade: verifiedGrade,
         verified_by_user_id: profile.id,
         verification_notes: verificationNotes,
@@ -240,6 +253,26 @@ export default function VerificationPanel({ profile }) {
           </span>
         </div>
       </div>
+
+      {/* Parameter selector if subelement has multiple parameters */}
+      {SUBELEMENT_PARAMETERS[activeSubelement] > 1 && (
+        <div className="mb-6 p-1 bg-white border border-slate-200/60 rounded-xl flex space-x-1 shadow-sm">
+          {Array.from({ length: SUBELEMENT_PARAMETERS[activeSubelement] }, (_, i) => i + 1).map(num => (
+            <button
+              key={num}
+              type="button"
+              onClick={() => setActiveParameter(num)}
+              className={`flex-1 py-2 text-center text-xs font-semibold rounded-lg transition-all duration-200 ${
+                activeParameter === num
+                  ? 'bg-sky-600 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              Parameter {num}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Main Grid table */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">

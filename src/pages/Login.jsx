@@ -11,6 +11,11 @@ export default function Login() {
   const [selectedRole, setSelectedRole] = useState('OPD');
   const [opdList, setOpdList] = useState([]);
   
+  // Quick Mock Login States
+  const [quickRole, setQuickRole] = useState('ADMIN');
+  const [quickOpd, setQuickOpd] = useState('');
+  const [quickName, setQuickName] = useState('Administrator');
+  
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -98,6 +103,36 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDemoLogin = (role, opdId, opdName) => {
+    const mockUser = {
+      id: `mock-uuid-${role.toLowerCase()}`,
+      email: `${role.toLowerCase()}@demo.spip.go.id`,
+      user_metadata: {
+        full_name: `${role} Demo Account`,
+        role: role,
+        opd_id: opdId
+      }
+    };
+    
+    const mockProfile = {
+      id: mockUser.id,
+      role: role,
+      opd_id: opdId,
+      full_name: `${role} Demo Account`,
+      ref_opd: {
+        id: opdId,
+        code_opd: role === 'OPD' ? 'DISPUSIP' : role,
+        name_opd: opdName
+      }
+    };
+
+    localStorage.setItem('mock_session', JSON.stringify({ user: mockUser }));
+    localStorage.setItem('mock_profile', JSON.stringify(mockProfile));
+
+    // Redirect to home and reload to let App.jsx pick up the session
+    window.location.href = '/';
   };
 
   return (
@@ -256,6 +291,118 @@ export default function Login() {
           >
             {isSignUp ? 'Sudah memiliki akun? Masuk' : 'Belum memiliki akun? Daftar baru'}
           </button>
+        </div>
+
+        <div className="mt-6 pt-6 border-t border-slate-100 space-y-4">
+          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider text-center mb-1 flex items-center justify-center space-x-1">
+            <span>⚡ Quick Bypass Login (Rate-Limit Safe)</span>
+          </p>
+          
+          <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-100">
+            <div>
+              <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Nama Operator</label>
+              <input
+                type="text"
+                value={quickName}
+                onChange={(e) => setQuickName(e.target.value)}
+                className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Pilih Peran (Role)</label>
+                <select
+                  value={quickRole}
+                  onChange={(e) => {
+                    const r = e.target.value;
+                    setQuickRole(r);
+                    if (r === 'ADMIN') setQuickName('Admin Super');
+                    else if (r === 'BAPPEDA') setQuickName('Bappeda Operator');
+                    else if (r === 'BPKAD') setQuickName('BPKAD Operator');
+                    else if (r === 'INSPEKTORAT') setQuickName('Inspektorat Auditor');
+                    else setQuickName('Operator Dinas');
+                  }}
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none"
+                >
+                  <option value="ADMIN">ADMINISTRATOR</option>
+                  <option value="BAPPEDA">BAPPEDA</option>
+                  <option value="BPKAD">BPKAD</option>
+                  <option value="INSPEKTORAT">INSPEKTORAT</option>
+                  <option value="OPD">OPD</option>
+                </select>
+              </div>
+
+              {quickRole === 'OPD' && (
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Pilih Instansi OPD</label>
+                  <select
+                    value={quickOpd}
+                    onChange={(e) => setQuickOpd(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none"
+                  >
+                    <option value="">Pilih...</option>
+                    {opdList.map(o => (
+                      <option key={o.id} value={o.id}>{o.name_opd}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                let id = 1;
+                let name = 'Badan Perencanaan Pembangunan Daerah';
+                
+                if (quickRole === 'INSPEKTORAT') {
+                  id = 3;
+                  name = 'Inspektorat';
+                } else if (quickRole === 'BPKAD') {
+                  id = 26;
+                  name = 'Badan Pengelolaan Keuangan dan Aset Daerah Provinsi Lampung';
+                } else if (quickRole === 'OPD') {
+                  const selected = opdList.find(o => String(o.id) === String(quickOpd));
+                  if (!selected) {
+                    alert('Silakan pilih Instansi OPD terlebih dahulu!');
+                    return;
+                  }
+                  id = selected.id;
+                  name = selected.name_opd;
+                }
+
+                const mockUser = {
+                  id: `mock-uuid-${quickRole.toLowerCase()}-${id}`,
+                  email: `${quickRole.toLowerCase()}_${id}@demo.spip.go.id`,
+                  user_metadata: {
+                    full_name: quickName,
+                    role: quickRole,
+                    opd_id: id
+                  }
+                };
+                
+                const mockProfile = {
+                  id: mockUser.id,
+                  role: quickRole,
+                  opd_id: id,
+                  full_name: quickName,
+                  ref_opd: {
+                    id: id,
+                    code_opd: quickRole === 'OPD' ? 'DISPUSIP' : quickRole,
+                    name_opd: name
+                  }
+                };
+
+                localStorage.setItem('mock_session', JSON.stringify({ user: mockUser }));
+                localStorage.setItem('mock_profile', JSON.stringify(mockProfile));
+                window.location.href = '/';
+              }}
+              className="w-full py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-sky-600/10 flex items-center justify-center space-x-1.5"
+            >
+              <span>🔑 Bypass &amp; Masuk ke Sistem</span>
+            </button>
+          </div>
         </div>
 
       </div>

@@ -38,6 +38,14 @@ const SUBELEMENT_LABELS = {
   '5.2': 'Evaluasi Terpisah'
 };
 
+const SUBELEMENT_PARAMETERS = {
+  '1.1': 1, '1.2': 1, '1.3': 1, '1.4': 1, '1.5': 1, '1.6': 2, '1.7': 1, '1.8': 2,
+  '2.1': 3, '2.2': 5,
+  '3.1': 1, '3.2': 1, '3.3': 1, '3.4': 1, '3.5': 1, '3.6': 1, '3.7': 1, '3.8': 1, '3.9': 1, '3.10': 1, '3.11': 1,
+  '4.1': 4, '4.2': 1,
+  '5.1': 3, '5.2': 2
+};
+
 const PILLARS = [
   { id: 'T1', name: 'Tujuan 1: Efektivitas & Efisiensi (2E)', code: 'KK3.1' },
   { id: 'T2', name: 'Tujuan 2: Keandalan Laporan Keuangan', code: 'KK3.2' },
@@ -53,10 +61,11 @@ const REF_GRADES = [
   { value: 'A', label: 'Optimum (Grade 5)', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
 ];
 
-export default function SubelementAssessments({ profile }) {
+export default function SubelementAssessments({ profile, selectedYear }) {
   const [activePillar, setActivePillar] = useState('T1');
   const [activeComponent, setActiveComponent] = useState('1');
   const [activeSubelement, setActiveSubelement] = useState('1.1');
+  const [activeParameter, setActiveParameter] = useState(1);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   
@@ -72,10 +81,26 @@ export default function SubelementAssessments({ profile }) {
   const [refAoiOptions, setRefAoiOptions] = useState([]);
   const [refCauseOptions, setRefCauseOptions] = useState([]);
 
-  const userOpdId = profile?.opd_id;
+  // OPD list and scope selection
+  const [opds, setOpds] = useState([]);
+  const [selectedOpdId, setSelectedOpdId] = useState('');
+  const userRole = profile?.role || 'OPD';
 
   useEffect(() => {
-    // Sync active subelement when component tab changes
+    fetchOPDs();
+  }, [selectedYear]);
+
+  useEffect(() => {
+    if (profile?.opd_id) {
+      setSelectedOpdId(String(profile.opd_id));
+    }
+  }, [profile]);
+
+  useEffect(() => {
+    setActiveParameter(1);
+  }, [activeSubelement]);
+
+  useEffect(() => {
     const comp = COSO_COMPONENTS.find(c => c.id === activeComponent);
     if (comp && comp.subelements.length > 0) {
       setActiveSubelement(comp.subelements[0]);
@@ -83,9 +108,23 @@ export default function SubelementAssessments({ profile }) {
   }, [activeComponent]);
 
   useEffect(() => {
-    fetchAssessment();
+    if (selectedOpdId) {
+      fetchAssessment();
+    }
     fetchRefOptions();
-  }, [activePillar, activeSubelement]);
+  }, [activePillar, activeSubelement, activeParameter, selectedOpdId, selectedYear]);
+
+  const fetchOPDs = async () => {
+    try {
+      const { data } = await supabase.from('ref_opd').select('*').order('id');
+      setOpds(data || []);
+      if (data && data.length > 0 && !profile?.opd_id) {
+        setSelectedOpdId(String(data[0].id));
+      }
+    } catch (err) {
+      console.error('Error fetching OPD list:', err);
+    }
+  };
 
   const fetchRefOptions = async () => {
     try {
@@ -114,20 +153,19 @@ export default function SubelementAssessments({ profile }) {
   };
 
   const fetchAssessment = async () => {
-    if (!userOpdId) return;
+    if (!selectedOpdId) return;
     
     try {
       setLoading(true);
-      setError('');
       
       const { data, error } = await supabase
         .from('trx_subelement_assessment')
         .select('*')
-        .eq('opd_id', userOpdId)
-        .eq('fiscal_year', 2026)
+        .eq('opd_id', parseInt(selectedOpdId))
+        .eq('fiscal_year', selectedYear)
         .eq('pillar_type', activePillar)
         .eq('subelement_code', activeSubelement)
-        .eq('parameter_no', 1) // default parameter
+        .eq('parameter_no', activeParameter)
         .single();
         
       if (error && error.code !== 'PGRST116') throw error;
@@ -157,8 +195,8 @@ export default function SubelementAssessments({ profile }) {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (!userOpdId) {
-      alert('Profil instansi OPD tidak ditemukan.');
+    if (!selectedOpdId) {
+      alert('Mohon pilih instansi OPD terlebih dahulu.');
       return;
     }
 
@@ -169,19 +207,19 @@ export default function SubelementAssessments({ profile }) {
       const { data: existing } = await supabase
         .from('trx_subelement_assessment')
         .select('id')
-        .eq('opd_id', userOpdId)
-        .eq('fiscal_year', 2026)
+        .eq('opd_id', parseInt(selectedOpdId))
+        .eq('fiscal_year', selectedYear)
         .eq('pillar_type', activePillar)
         .eq('subelement_code', activeSubelement)
-        .eq('parameter_no', 1)
+        .eq('parameter_no', activeParameter)
         .single();
 
       const payload = {
-        opd_id: userOpdId,
-        fiscal_year: 2026,
+        opd_id: parseInt(selectedOpdId),
+        fiscal_year: selectedYear,
         pillar_type: activePillar,
         subelement_code: activeSubelement,
-        parameter_no: 1,
+        parameter_no: activeParameter,
         opd_uraian: opdUraian,
         opd_grade: opdGrade,
         opd_aoi_cluster: opdGrade !== 'A' ? opdAoiCluster : null,
@@ -220,11 +258,30 @@ export default function SubelementAssessments({ profile }) {
   return (
     <div className="p-8 max-w-6xl mx-auto">
       
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-900 leading-tight">Penilaian Mandiri Subelement (KK3.1 - KK3.4)</h1>
-        <p className="text-sm text-slate-500 mt-1">Evaluasi 25 subunsur lingkungan pengendalian dan proses manajemen internal instansi Anda.</p>
+      {/* Header with Selector */}
+      <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between border-b border-slate-200 pb-6 space-y-4 md:space-y-0">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 leading-tight">Penilaian Mandiri Subelement (KK3.1 - KK3.4)</h1>
+          <p className="text-sm text-slate-500 mt-1">Evaluasi 25 subunsur lingkungan pengendalian dan proses manajemen internal instansi Anda.</p>
+        </div>
+
+        {/* OPD Selector for coordinators */}
+        {['ADMIN', 'BAPPEDA', 'BPKAD', 'INSPEKTORAT'].includes(userRole) && (
+          <div className="flex items-center space-x-2.5 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm">
+            <span className="text-[11px] font-bold text-slate-500 uppercase">Mengisi atas nama:</span>
+            <select
+              value={selectedOpdId}
+              onChange={(e) => setSelectedOpdId(e.target.value)}
+              className="bg-transparent text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer"
+            >
+              {opds.map(opd => (
+                <option key={opd.id} value={opd.id}>{opd.name_opd}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
+
 
       {/* Pillar Tabs */}
       <div className="flex border-b border-slate-200 mb-6 bg-white p-1.5 rounded-xl shadow-sm space-x-1">
@@ -309,6 +366,26 @@ export default function SubelementAssessments({ profile }) {
                 </h2>
               </div>
             </div>
+
+            {/* Parameter selection tabs */}
+            {SUBELEMENT_PARAMETERS[activeSubelement] > 1 && (
+              <div className="mb-6 p-1 bg-slate-50 border border-slate-200/60 rounded-xl flex space-x-1">
+                {Array.from({ length: SUBELEMENT_PARAMETERS[activeSubelement] }, (_, i) => i + 1).map(num => (
+                  <button
+                    key={num}
+                    type="button"
+                    onClick={() => setActiveParameter(num)}
+                    className={`flex-1 py-2 text-center text-xs font-semibold rounded-lg transition-all duration-200 ${
+                      activeParameter === num
+                        ? 'bg-sky-600 text-white shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100/50'
+                    }`}
+                  >
+                    Parameter {num}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {loading ? (
               <div className="py-12 flex items-center justify-center">

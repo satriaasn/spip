@@ -10,7 +10,14 @@ import {
   FileEdit,
   ClipboardCheck,
   Building,
-  Info
+  Info,
+  Search,
+  GitFork,
+  CheckSquare,
+  Square,
+  Layers,
+  ArrowRight,
+  Target
 } from 'lucide-react';
 
 // References for dropdowns
@@ -44,7 +51,7 @@ const REF_AOI_TARGET = [
 
 const REF_CAUSE_CLUSTERS = ["Man", "Method", "Money", "Material", "Machine"];
 
-export default function PohonKinerja({ profile }) {
+export default function PohonKinerja({ profile, selectedYear }) {
   const [nodes, setNodes] = useState([]);
   const [expandedNodes, setExpandedNodes] = useState({});
   const [loading, setLoading] = useState(false);
@@ -65,13 +72,96 @@ export default function PohonKinerja({ profile }) {
   const [kkeData, setKkeData] = useState({});
   const [savingKke, setSavingKke] = useState(false);
 
+  // Tree filter states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedOpdFilter, setSelectedOpdFilter] = useState('all');
+  const [selectedLevelFilter, setSelectedLevelFilter] = useState('all');
+
+  // OPD Sasaran Pemda selection state
+  const [selectedPemdaIds, setSelectedPemdaIds] = useState(new Set());
+
   const userRole = profile?.role || 'OPD';
   const userOpdId = profile?.opd_id;
+  const isOpdUser = userRole === 'OPD';
+
+  // Get all PEMDA-level nodes for OPD selection panel
+  const pemdaNodes = nodes.filter(n => n.level_type === 'PEMDA');
 
   useEffect(() => {
     fetchTree();
     fetchOPDs();
-  }, []);
+  }, [selectedYear]);
+
+  useEffect(() => {
+    if (profile) {
+      setSelectedOpdId(profile.opd_id || '');
+      if (!['ADMIN', 'BAPPEDA', 'BPKAD', 'INSPEKTORAT'].includes(profile.role)) {
+        setSelectedOpdFilter(String(profile.opd_id || ''));
+      }
+    }
+  }, [profile]);
+
+  // Auto-select PEMDA nodes where this OPD already has child nodes
+  useEffect(() => {
+    if (isOpdUser && userOpdId && nodes.length > 0) {
+      const opdNodes = nodes.filter(n => n.opd_id === userOpdId && n.parent_id);
+      const parentPemdaIds = new Set();
+      opdNodes.forEach(n => {
+        // Walk up to find the PEMDA root
+        let current = n;
+        while (current) {
+          const parent = nodes.find(p => p.id === current.parent_id);
+          if (parent && parent.level_type === 'PEMDA') {
+            parentPemdaIds.add(parent.id);
+            break;
+          }
+          current = parent;
+        }
+      });
+      if (parentPemdaIds.size > 0) {
+        setSelectedPemdaIds(parentPemdaIds);
+      }
+    }
+  }, [nodes, isOpdUser, userOpdId]);
+
+  // Toggle a PEMDA node for OPD selection workflow
+  const togglePemdaSelection = (pemdaId) => {
+    setSelectedPemdaIds(prev => {
+      const next = new Set(prev);
+      if (next.has(pemdaId)) {
+        next.delete(pemdaId);
+      } else {
+        next.add(pemdaId);
+      }
+      return next;
+    });
+  };
+
+  // Build tree filtered to only selected PEMDA roots (for OPD)
+  const buildOpdTree = () => {
+    if (!isOpdUser || selectedPemdaIds.size === 0) return [];
+    
+    const relevantPemdaNodes = nodes.filter(n => n.level_type === 'PEMDA' && selectedPemdaIds.has(n.id));
+    
+    const buildChildrenFor = (parentId) => {
+      const children = nodes
+        .filter(n => n.parent_id === parentId)
+        .sort((a, b) => {
+          const LEVEL_ORDER = { PEMDA: 0, OPD: 1, PROGRAM: 2, KEGIATAN: 3, SUB_KEGIATAN: 4 };
+          return (LEVEL_ORDER[a.level_type] || 99) - (LEVEL_ORDER[b.level_type] || 99) || a.id - b.id;
+        });
+      
+      return children.map(child => ({
+        ...child,
+        children: buildChildrenFor(child.id)
+      }));
+    };
+    
+    return relevantPemdaNodes.map(pemda => ({
+      ...pemda,
+      children: buildChildrenFor(pemda.id)
+    }));
+  };
 
   const fetchOPDs = async () => {
     const { data } = await supabase.from('ref_opd').select('*').order('id');
@@ -85,6 +175,7 @@ export default function PohonKinerja({ profile }) {
       const { data, error } = await supabase
         .from('mst_pohon_kinerja')
         .select('*, ref_opd(name_opd)')
+        .eq('fiscal_year', selectedYear)
         .order('level_type', { ascending: true }) // We will structure it hierarchy-wise on client
         .order('id', { ascending: true });
 
@@ -101,24 +192,84 @@ export default function PohonKinerja({ profile }) {
     setExpandedNodes(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  // Hierarchical level priorities for ordering
+  const LEVEL_ORDER = { PEMDA: 0, OPD: 1, PROGRAM: 2, KEGIATAN: 3, SUB_KEGIATAN: 4 };
+
   // Build the hierarchical tree data structure from flat nodes
   const buildTree = () => {
+    const isCoordinator = ['ADMIN', 'BAPPEDA', 'BPKAD', 'INSPEKTORAT'].includes(userRole);
+    
+    // 1. Get nodes visible to the user's role
+    const visibleNodes = nodes.filter(node => {
+      if (isCoordinator) return true;
+      return node.level_type === 'PEMDA' || node.opd_id === userOpdId;
+    });
+
+    // 2. Build full parent-child mapping
     const nodeMap = {};
-    nodes.forEach(node => {
+    visibleNodes.forEach(node => {
       nodeMap[node.id] = { ...node, children: [] };
     });
-    
-    const tree = [];
-    nodes.forEach(node => {
+
+    const fullTree = [];
+    visibleNodes.forEach(node => {
       const mappedNode = nodeMap[node.id];
       if (node.parent_id && nodeMap[node.parent_id]) {
         nodeMap[node.parent_id].children.push(mappedNode);
       } else {
-        // If no parent, it's Level 0 (PEMDA)
-        tree.push(mappedNode);
+        if (node.level_type === 'PEMDA' || !node.parent_id) {
+          fullTree.push(mappedNode);
+        }
       }
     });
-    return tree;
+
+    // 3. Recursive function to filter and sort nodes in the tree
+    const filterAndSortNode = (node) => {
+      // Recursively filter children first
+      const filteredChildren = node.children
+        .map(child => filterAndSortNode(child))
+        .filter(child => child !== null);
+
+      // Check if this node matches the filters directly
+      const q = searchQuery.toLowerCase();
+      const matchesSearch = !searchQuery || 
+        (node.title_objective || '').toLowerCase().includes(q) || 
+        (node.indicator_name || '').toLowerCase().includes(q);
+
+      const matchesOpd = selectedOpdFilter === 'all' || 
+        node.level_type === 'PEMDA' || 
+        String(node.opd_id) === String(selectedOpdFilter);
+
+      const matchesLevel = selectedLevelFilter === 'all' || 
+        node.level_type === selectedLevelFilter;
+
+      const matchesDirect = matchesSearch && matchesOpd && matchesLevel;
+
+      // Keep node if matches directly OR has matching descendants
+      if (matchesDirect || filteredChildren.length > 0) {
+        // Enforce strict level type sorting: PEMDA -> OPD -> PROGRAM -> KEGIATAN -> SUB_KEGIATAN
+        const sortedChildren = [...filteredChildren].sort((a, b) => {
+          return (LEVEL_ORDER[a.level_type] || 0) - (LEVEL_ORDER[b.level_type] || 0);
+        });
+
+        return {
+          ...node,
+          children: sortedChildren
+        };
+      }
+
+      return null;
+    };
+
+    // 4. Process root nodes
+    const resultTree = fullTree
+      .map(rootNode => filterAndSortNode(rootNode))
+      .filter(rootNode => rootNode !== null);
+
+    // Sort roots by level hierarchy
+    resultTree.sort((a, b) => (LEVEL_ORDER[a.level_type] || 0) - (LEVEL_ORDER[b.level_type] || 0));
+
+    return resultTree;
   };
 
   const handleAddNode = async (e) => {
@@ -132,7 +283,7 @@ export default function PohonKinerja({ profile }) {
       setLoading(true);
       
       const payload = {
-        fiscal_year: 2026,
+        fiscal_year: selectedYear,
         level_type: levelType,
         parent_id: parentId ? parseInt(parentId) : null,
         title_objective: titleObjective,
@@ -172,7 +323,19 @@ export default function PohonKinerja({ profile }) {
 
   // Open Quality Appraisal (KKE Checklist) form for a specific node
   const handleOpenKke = async (node) => {
-    setSelectedNodeForKke(node);
+    // Resolve parent node title for context (needed for "Keterkaitan" evaluation)
+    let parentTitle = '';
+    let parentLevelLabel = '';
+    if (node.parent_id) {
+      const parentNode = nodes.find(n => n.id === node.parent_id);
+      if (parentNode) {
+        parentTitle = parentNode.title_objective;
+        const labelMap = { PEMDA: 'Sasaran Pemda', OPD: 'Sasaran OPD', PROGRAM: 'Program', KEGIATAN: 'Kegiatan' };
+        parentLevelLabel = labelMap[parentNode.level_type] || parentNode.level_type;
+      }
+    }
+
+    setSelectedNodeForKke({ ...node, _parentTitle: parentTitle, _parentLevelLabel: parentLevelLabel });
     setKkeData({});
     
     try {
@@ -223,7 +386,7 @@ export default function PohonKinerja({ profile }) {
       const payload = {
         pohon_kinerja_id: selectedNodeForKke.id,
         opd_id: selectedNodeForKke.opd_id || 1, // default to bappeda if null (PEMDA level)
-        fiscal_year: 2026,
+        fiscal_year: selectedYear,
         assessment_type: `KKE_${selectedNodeForKke.level_type === 'PEMDA' ? '1.1' : selectedNodeForKke.level_type === 'OPD' ? '1.2' : selectedNodeForKke.level_type === 'PROGRAM' ? '2.1' : selectedNodeForKke.level_type === 'KEGIATAN' ? '2.2' : '2.3'}`,
         assessment_data: kkeData
       };
@@ -285,6 +448,7 @@ export default function PohonKinerja({ profile }) {
       case 'SUB_KEGIATAN':
         return [
           { key: 'keterkaitan', label: 'Keterkaitan dengan Sasaran Kegiatan', aoiList: REF_AOI_SASARAN },
+          { key: 'sasaran_tepat', label: 'Sasaran Sub-kegiatan Tepat', aoiList: REF_AOI_SASARAN },
           { key: 'indikator_tepat', label: 'Indikator Kinerja Tepat dan Baik', aoiList: REF_AOI_INDIKATOR },
           { key: 'target_tepat', label: 'Target Kinerja Baik', aoiList: REF_AOI_TARGET }
         ];
@@ -314,6 +478,13 @@ export default function PohonKinerja({ profile }) {
     const isAuthorizedToEdit = 
       userRole === 'ADMIN' || 
       (node.level_type === 'PEMDA' && userRole === 'BAPPEDA') ||
+      (node.level_type !== 'PEMDA' && node.opd_id === userOpdId);
+
+    // Any OPD user can add their OPD Sasaran under a PEMDA Sasaran!
+    const isAuthorizedToAddChild = 
+      userRole === 'ADMIN' || 
+      userRole === 'BAPPEDA' ||
+      (node.level_type === 'PEMDA') ||
       (node.level_type !== 'PEMDA' && node.opd_id === userOpdId);
 
     const levelColors = {
@@ -374,7 +545,7 @@ export default function PohonKinerja({ profile }) {
               <span>Evaluasi KKE</span>
             </button>
             
-            {isAuthorizedToEdit && node.level_type !== 'SUB_KEGIATAN' && (
+            {isAuthorizedToAddChild && node.level_type !== 'SUB_KEGIATAN' && (
               <button
                 onClick={() => {
                   setParentId(node.id);
@@ -409,6 +580,7 @@ export default function PohonKinerja({ profile }) {
   };
 
   const treeData = buildTree();
+  const opdTreeData = isOpdUser ? buildOpdTree() : [];
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
@@ -416,7 +588,11 @@ export default function PohonKinerja({ profile }) {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 leading-tight">Pohon Kinerja & Kertas Kerja Evaluasi (KKE)</h1>
-          <p className="text-sm text-slate-500 mt-1">Struktur perencanaan berjenjang yang di-cascade dari tingkat Pemda hingga Sub-kegiatan OPD.</p>
+          <p className="text-sm text-slate-500 mt-1">
+            {isOpdUser 
+              ? 'Pilih Sasaran Strategis Pemda yang relevan, lalu cascadekan ke Sasaran OPD hingga Sub-kegiatan.' 
+              : 'Struktur perencanaan berjenjang yang di-cascade dari tingkat Pemda hingga Sub-kegiatan OPD.'}
+          </p>
         </div>
 
         {(userRole === 'ADMIN' || userRole === 'BAPPEDA') && (
@@ -434,6 +610,55 @@ export default function PohonKinerja({ profile }) {
         )}
       </div>
 
+      {/* Filter Panel - For coordinators/admins */}
+      {!isOpdUser && (
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Search */}
+          <div className="relative">
+            <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
+              <Search size={15} />
+            </span>
+            <input
+              type="text"
+              placeholder="Cari sasaran atau indikator..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200/60 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500 focus:bg-white transition-all"
+            />
+          </div>
+
+          {/* OPD Filter (Only for Coordinators) */}
+          <div>
+            <select
+              value={selectedOpdFilter}
+              onChange={(e) => setSelectedOpdFilter(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200/60 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500 focus:bg-white transition-all"
+            >
+              <option value="all">Semua OPD (Lintas Dinas)</option>
+              {opdList.map(o => (
+                <option key={o.id} value={o.id}>{o.name_opd}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Level Filter */}
+          <div>
+            <select
+              value={selectedLevelFilter}
+              onChange={(e) => setSelectedLevelFilter(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200/60 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500 focus:bg-white transition-all"
+            >
+              <option value="all">Semua Level Cascade</option>
+              <option value="PEMDA">Lvl 0 - Sasaran PEMDA</option>
+              <option value="OPD">Lvl 1 - Sasaran OPD</option>
+              <option value="PROGRAM">Lvl 2 - Program Kerja</option>
+              <option value="KEGIATAN">Lvl 3 - Kegiatan</option>
+              <option value="SUB_KEGIATAN">Lvl 4 - Sub Kegiatan</option>
+            </select>
+          </div>
+        </div>
+      )}
+
       {/* Loading Overlay */}
       {loading && nodes.length === 0 ? (
         <div className="flex items-center justify-center p-12 bg-white rounded-2xl border border-slate-100">
@@ -442,7 +667,122 @@ export default function PohonKinerja({ profile }) {
             <p className="text-xs text-slate-500">Mengambil bagan pohon kinerja...</p>
           </div>
         </div>
+      ) : isOpdUser ? (
+        /* ============================================================ */
+        /* OPD USER VIEW: Sasaran Pemda Selection + Filtered Cascade    */
+        /* ============================================================ */
+        <div className="space-y-6">
+          {/* STEP 1: Pilih Sasaran Strategis Pemda */}
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-sky-50/30">
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 rounded-xl bg-sky-500/10 flex items-center justify-center">
+                  <Target size={16} className="text-sky-600" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-slate-800 text-sm">Langkah 1 — Pilih Sasaran Strategis Pemda</h2>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Centang sasaran Pemda yang menjadi acuan bagi OPD Anda. Setelah dipilih, Anda bisa melanjutkan cascading di bawah.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 space-y-2 max-h-[360px] overflow-y-auto">
+              {pemdaNodes.length === 0 ? (
+                <div className="text-center py-8">
+                  <Info size={28} className="mx-auto text-slate-300 mb-2" />
+                  <p className="text-xs text-slate-500">Belum ada Sasaran Pemda yang dibuat oleh administrator.</p>
+                </div>
+              ) : (
+                pemdaNodes.map(pemda => {
+                  const isSelected = selectedPemdaIds.has(pemda.id);
+                  const childCount = nodes.filter(n => n.parent_id === pemda.id && n.opd_id === userOpdId).length;
+                  
+                  return (
+                    <button
+                      key={pemda.id}
+                      onClick={() => togglePemdaSelection(pemda.id)}
+                      className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-300 group ${
+                        isSelected 
+                          ? 'border-sky-400 bg-sky-50/60 shadow-md shadow-sky-500/5' 
+                          : 'border-slate-100 bg-white hover:border-sky-200 hover:bg-sky-50/20 hover:shadow-sm'
+                      }`}
+                    >
+                      <div className="flex items-start space-x-3">
+                        {/* Checkbox Icon */}
+                        <div className={`mt-0.5 shrink-0 transition-all duration-200 ${isSelected ? 'text-sky-600' : 'text-slate-300 group-hover:text-sky-400'}`}>
+                          {isSelected ? <CheckSquare size={18} /> : <Square size={18} />}
+                        </div>
+                        
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded tracking-wider bg-violet-100 text-violet-600">
+                              Sasaran Pemda
+                            </span>
+                            {childCount > 0 && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600">
+                                {childCount} sasaran OPD Anda
+                              </span>
+                            )}
+                          </div>
+                          <p className={`text-sm font-semibold line-clamp-2 ${isSelected ? 'text-sky-800' : 'text-slate-700'}`}>
+                            {pemda.title_objective}
+                          </p>
+                          <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">
+                            Indikator: {pemda.indicator_name} | Target: {pemda.target_value} {pemda.unit_of_measurement}
+                          </p>
+                        </div>
+
+                        {/* Arrow if selected */}
+                        {isSelected && (
+                          <div className="shrink-0 mt-2">
+                            <ArrowRight size={14} className="text-sky-400" />
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* STEP 2: Cascade Tree untuk Sasaran Pemda yang Dipilih */}
+          {selectedPemdaIds.size > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-emerald-50/30">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                    <Layers size={16} className="text-emerald-600" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-slate-800 text-sm">Langkah 2 — Cascading Perencanaan</h2>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Tambahkan Sasaran OPD → Program → Kegiatan → Sub-kegiatan di bawah Sasaran Pemda yang Anda pilih.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 space-y-3">
+                {opdTreeData.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Info size={28} className="mx-auto text-slate-300 mb-2" />
+                    <p className="text-xs text-slate-500">Belum ada data cascade. Klik tombol (+) pada Sasaran Pemda di bawah untuk menambah Sasaran OPD Anda.</p>
+                  </div>
+                ) : (
+                  opdTreeData.map(rootNode => (
+                    <TreeNode key={rootNode.id} node={rootNode} />
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       ) : (
+        /* ============================================================ */
+        /* ADMIN/COORDINATOR VIEW: Full Tree (original view)             */
+        /* ============================================================ */
         <div className="space-y-3">
           {treeData.length === 0 ? (
             <div className="p-8 bg-sky-50/50 border border-sky-100 rounded-2xl text-center">
@@ -484,7 +824,7 @@ export default function PohonKinerja({ profile }) {
             </div>
 
             <form onSubmit={handleAddNode} className="p-6 space-y-4">
-              {levelType !== 'PEMDA' && userRole === 'ADMIN' && (
+              {levelType !== 'PEMDA' && ['ADMIN', 'BAPPEDA', 'BPKAD', 'INSPEKTORAT'].includes(userRole) && (
                 <div>
                   <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Instansi OPD Pengampu</label>
                   <select
@@ -567,21 +907,56 @@ export default function PohonKinerja({ profile }) {
           <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
             {/* Header */}
             <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-              <div>
-                <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded tracking-wider bg-sky-500/10 text-sky-600">
-                  Kertas Kerja Evaluasi KKE
-                </span>
-                <h3 className="font-bold text-slate-800 text-sm mt-1">
-                  Evaluasi Kualitas: {selectedNodeForKke.title_objective}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center space-x-2 mb-1">
+                  <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded tracking-wider bg-sky-500/10 text-sky-600">
+                    KKE {selectedNodeForKke.level_type === 'PEMDA' ? '1.1' : selectedNodeForKke.level_type === 'OPD' ? '1.2' : selectedNodeForKke.level_type === 'PROGRAM' ? '2.1' : selectedNodeForKke.level_type === 'KEGIATAN' ? '2.2' : '2.3'}
+                  </span>
+                  <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded tracking-wider bg-teal-500/10 text-teal-600">
+                    Level: {selectedNodeForKke.level_type}
+                  </span>
+                  {selectedNodeForKke.ref_opd && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 truncate max-w-[200px]">
+                      {selectedNodeForKke.ref_opd.name_opd}
+                    </span>
+                  )}
+                </div>
+                <h3 className="font-bold text-slate-800 text-sm mt-1 line-clamp-2">
+                  {selectedNodeForKke.title_objective}
                 </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Indikator: <span className="font-medium text-slate-700">{selectedNodeForKke.indicator_name}</span> | Target: <span className="font-medium text-slate-700">{selectedNodeForKke.target_value} {selectedNodeForKke.unit_of_measurement}</span>
+                </p>
               </div>
               <button 
                 onClick={() => setSelectedNodeForKke(null)} 
-                className="text-slate-400 hover:text-slate-600 text-xs font-semibold"
+                className="text-slate-400 hover:text-slate-600 text-xs font-semibold ml-4 shrink-0"
               >
                 Batal
               </button>
             </div>
+
+            {/* Parent Context Card (for Keterkaitan evaluation) */}
+            {selectedNodeForKke._parentTitle && selectedNodeForKke.level_type !== 'PEMDA' && (
+              <div className="mx-6 mt-4 p-4 bg-amber-50/80 border border-amber-200/60 rounded-xl">
+                <div className="flex items-start space-x-2">
+                  <div className="shrink-0 w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center mt-0.5">
+                    <GitFork size={12} className="text-amber-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">
+                      Referensi Keterkaitan — {selectedNodeForKke._parentLevelLabel}
+                    </p>
+                    <p className="text-xs font-semibold text-amber-900 mt-0.5 line-clamp-3">
+                      "{selectedNodeForKke._parentTitle}"
+                    </p>
+                    <p className="text-[10px] text-amber-600 mt-1">
+                      Gunakan informasi di atas untuk menilai apakah sasaran/kegiatan saat ini terkait (relevan) dengan sasaran induk di atasnya.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Scrollable Form */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">

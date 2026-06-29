@@ -1,81 +1,71 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Save, FileCheck, BarChart3, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Save, Plus, Trash2, FileCheck, BarChart3, AlertTriangle, ShieldCheck, HelpCircle } from 'lucide-react';
 
 const SHEETS = [
-  { id: 'kk5', name: 'KK 5 (Capaian Sasaran)', roles: ['BAPPEDA', 'ADMIN'] },
-  { id: 'kk6', name: 'KK 6 (Pelaporan Keuangan)', roles: ['BPKAD', 'ADMIN'] },
-  { id: 'kk7', name: 'KK 7 (Pengamanan Aset)', roles: ['BPKAD', 'ADMIN'] },
-  { id: 'kk8', name: 'KK 8 (Ketaatan & Korupsi)', roles: ['INSPEKTORAT', 'ADMIN'] }
+  { id: 'kk51a', name: 'KK 5.1 A (Capaian Pemda)', dbType: 'KK5.1A', roles: ['BAPPEDA', 'ADMIN', 'OPD'] },
+  { id: 'kk51b', name: 'KK 5.1 B (Capaian OPD)', dbType: 'KK5.1B', roles: ['BAPPEDA', 'ADMIN', 'OPD'] },
+  { id: 'kk52', name: 'KK 5.2 (Capaian Output)', dbType: 'KK5.2', roles: ['BAPPEDA', 'ADMIN', 'OPD'] },
+  { id: 'kk6', name: 'KK 6 (Pelaporan Keuangan)', dbType: 'KK6', roles: ['BPKAD', 'ADMIN'] },
+  { id: 'kk7', name: 'KK 7 (Pengamanan Aset)', dbType: 'KK7', roles: ['BPKAD', 'ADMIN'] },
+  { id: 'kk8', name: 'KK 8 (Ketaatan & Korupsi)', dbType: 'KK8', roles: ['INSPEKTORAT', 'ADMIN'] }
 ];
 
-export default function Achievements({ profile }) {
-  const [activeTab, setActiveTab] = useState('kk5');
+export default function Achievements({ profile, selectedYear }) {
+  const [activeTab, setActiveTab] = useState('kk51a');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Form State - KK 5 (Outcomes & Outputs averages)
-  const [kk5PemdaOutcome, setKk5PemdaOutcome] = useState('A'); // Grade A-E
-  const [kk5OpdOutcome, setKk5OpdOutcome] = useState('B'); // Grade A-E
-  const [kk5Output, setKk5Output] = useState('C'); // Grade A-E
-
-  // Form State - KK 6 (Pelaporan Keuangan)
-  const [kk6Opini2025, setKk6Opini2025] = useState('WTP');
-  const [kk6Opini2024, setKk6Opini2024] = useState('WTP');
-  const [kk6TemuanCount, setKk6TemuanCount] = useState(0);
-  const [kk6TemuanRupiah, setKk6TemuanRupiah] = useState('0');
-
-  // Form State - KK 7 (Pengamanan Aset)
-  const [kk7KondisiBaik, setKk7KondisiBaik] = useState('90');
-  const [kk7TemuanAset, setKk7TemuanAset] = useState('3'); // Grade A-E equivalent
-  const [kk7UraianAset, setKk7UraianAset] = useState('');
-
-  // Form State - KK 8 (Ketaatan & Korupsi)
-  const [kk8TemuanCount, setKk8TemuanCount] = useState(1);
-  const [kk8Korupsi, setKk8Korupsi] = useState('Tidak'); // 'Ya' / 'Tidak'
+  // Table rows and summary payload loaded from DB
+  const [rows, setRows] = useState([]);
+  const [summary, setSummary] = useState({});
+  const [opds, setOpds] = useState([]);
 
   const userRole = profile?.role || 'OPD';
 
   useEffect(() => {
-    // Auto focus tab matching user role
-    if (userRole === 'BAPPEDA') setActiveTab('kk5');
-    if (userRole === 'BPKAD') setActiveTab('kk6');
-    if (userRole === 'INSPEKTORAT') setActiveTab('kk8');
+    // Select default tab based on role
+    if (userRole === 'BAPPEDA' || userRole === 'OPD') setActiveTab('kk51a');
+    else if (userRole === 'BPKAD') setActiveTab('kk6');
+    else if (userRole === 'INSPEKTORAT') setActiveTab('kk8');
     
+    fetchOPDs();
+  }, [userRole]);
+
+  useEffect(() => {
     fetchAchievementData();
-  }, [activeTab]);
+  }, [activeTab, selectedYear]);
+
+  const fetchOPDs = async () => {
+    try {
+      const { data } = await supabase.from('ref_opd').select('*').order('id');
+      setOpds(data || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const fetchAchievementData = async () => {
     try {
       setLoading(true);
+      const activeSheet = SHEETS.find(s => s.id === activeTab);
+      if (!activeSheet) return;
+
       const { data, error } = await supabase
         .from('trx_achievement_assessment')
         .select('*')
-        .eq('fiscal_year', 2026)
-        .eq('kk_type', activeTab === 'kk5' ? 'KK5' : activeTab === 'kk6' ? 'KK6' : activeTab === 'kk7' ? 'KK7' : 'KK8')
+        .eq('fiscal_year', selectedYear)
+        .eq('kk_type', activeSheet.dbType)
         .single();
         
       if (error && error.code !== 'PGRST116') throw error;
       
       if (data && data.data_payload) {
-        const payload = data.data_payload;
-        if (activeTab === 'kk5') {
-          setKk5PemdaOutcome(payload.pemda_outcome || 'A');
-          setKk5OpdOutcome(payload.opd_outcome || 'B');
-          setKk5Output(payload.output || 'C');
-        } else if (activeTab === 'kk6') {
-          setKk6Opini2025(payload.opini_2025 || 'WTP');
-          setKk6Opini2024(payload.opini_2024 || 'WTP');
-          setKk6TemuanCount(payload.temuan_count || 0);
-          setKk6TemuanRupiah(payload.temuan_rupiah || '0');
-        } else if (activeTab === 'kk7') {
-          setKk7KondisiBaik(payload.kondisi_baik || '90');
-          setKk7TemuanAset(payload.temuan_aset || '3');
-          setKk7UraianAset(payload.uraian_aset || '');
-        } else if (activeTab === 'kk8') {
-          setKk8TemuanCount(payload.temuan_count || 1);
-          setKk8Korupsi(payload.korupsi || 'Tidak');
-        }
+        setRows(data.data_payload.rows || []);
+        setSummary(data.data_payload.summary || {});
+      } else {
+        setRows([]);
+        setSummary(getDefaultSummary(activeSheet.dbType));
       }
     } catch (err) {
       console.error('Error fetching achievements:', err);
@@ -84,30 +74,76 @@ export default function Achievements({ profile }) {
     }
   };
 
+  const getDefaultSummary = (dbType) => {
+    switch (dbType) {
+      case 'KK5.1A': return { pemda_outcome: 'B' };
+      case 'KK5.1B': return { opd_outcome: 'B' };
+      case 'KK5.2': return { output: 'C' };
+      case 'KK6': return { opini_2025: 'WTP', opini_2024: 'WTP', temuan_count: 5, temuan_rupiah: '9243014000' };
+      case 'KK7': return { kondisi_baik: '98', temuan_aset: 'C', uraian_aset: 'Aset dikuasai pihak lain berupa tanah belum optimal.' };
+      case 'KK8': return { temuan_count: 14, korupsi: 'Tidak' };
+      default: return {};
+    }
+  };
+
+  const handleCellChange = (index, field, value) => {
+    const updated = [...rows];
+    updated[index][field] = value;
+    setRows(updated);
+  };
+
+  const handleSummaryChange = (field, value) => {
+    setSummary(prev => ({ ...prev, [field]: value }));
+  };
+
+  const addRow = () => {
+    const activeSheet = SHEETS.find(s => s.id === activeTab);
+    const newRow = getNewRowTemplate(activeSheet.dbType);
+    setRows([...rows, newRow]);
+  };
+
+  const deleteRow = (index) => {
+    const updated = rows.filter((_, idx) => idx !== index);
+    setRows(updated);
+  };
+
+  const getNewRowTemplate = (dbType) => {
+    const baseNo = String(rows.length + 1);
+    switch (dbType) {
+      case 'KK5.1A':
+        return { no: baseNo, sasaran: '', indikator: '', sasaranTepat: 'Y', ikTepat: 'Y', dataAndal: 'Y', pm: 'Y', target: '', realisasi: '', persentase: '', nilai: '' };
+      case 'KK5.1B':
+        return { no: baseNo, sasaranPemda: '', opdName: '', sasaranOpd: '', indikatorOpd: '', target: '', realisasi: '', relevan: 'Y', sasaranTepat: 'Y', ikTepat: 'Y', dataAndal: 'Y', pm: 'Y' };
+      case 'KK5.2':
+        return { no: baseNo, sasaranPemda: '', opdName: '', sasaranOpd: '', sasaranProgram: '', programName: '', outputName: '' };
+      case 'KK6':
+        return { no: baseNo, opini2025: 'WTP', klasifikasi2025: '', uraian2025: '', nilai2025: '', penyebab2025: '', subunsur2025: '', opini2024: 'WTP', klasifikasi2024: '', uraian2024: '', nilai2024: '', penyebab2024: '', subunsur2024: '' };
+      case 'KK7':
+        return { no: baseNo, opini2025: 'WTP', kondisiBaik2025: '100', klasifikasi2025: '', uraian2025: '', nilai2025: '', penyebab2025: '', subunsur2025: '', opini2024: 'WTP', kondisiBaik2024: '100', klasifikasi2024: '', uraian2024: '', nilai2024: '' };
+      case 'KK8':
+        return { no: baseNo, opini2025: 'WTP', klasifikasi2025: '', uraian2025: '', nilai2025: '', penyebab2025: '', subunsur2025: '', opini2024: 'WTP', klasifikasi2024: '', uraian2024: '', nilai2024: '', penyebab2024: '', subunsur2024: '' };
+      default:
+        return {};
+    }
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     try {
       setSaving(true);
+      const activeSheet = SHEETS.find(s => s.id === activeTab);
       
-      const type = activeTab === 'kk5' ? 'KK5' : activeTab === 'kk6' ? 'KK6' : activeTab === 'kk7' ? 'KK7' : 'KK8';
-      let payload = {};
-
-      if (activeTab === 'kk5') {
-        payload = { pemda_outcome: kk5PemdaOutcome, opd_outcome: kk5OpdOutcome, output: kk5Output };
-      } else if (activeTab === 'kk6') {
-        payload = { opini_2025: kk6Opini2025, opini_2024: kk6Opini2024, temuan_count: parseInt(kk6TemuanCount), temuan_rupiah: kk6TemuanRupiah };
-      } else if (activeTab === 'kk7') {
-        payload = { kondisi_baik: kk7KondisiBaik, temuan_aset: kk7TemuanAset, uraian_aset: kk7UraianAset };
-      } else if (activeTab === 'kk8') {
-        payload = { temuan_count: parseInt(kk8TemuanCount), korupsi: kk8Korupsi };
-      }
+      const payload = {
+        rows,
+        summary
+      };
 
       // Check existing row
       const { data: existing } = await supabase
         .from('trx_achievement_assessment')
         .select('id')
-        .eq('fiscal_year', 2026)
-        .eq('kk_type', type)
+        .eq('fiscal_year', selectedYear)
+        .eq('kk_type', activeSheet.dbType)
         .single();
 
       let error;
@@ -120,12 +156,12 @@ export default function Achievements({ profile }) {
       } else {
         const { error: err } = await supabase
           .from('trx_achievement_assessment')
-          .insert([{ fiscal_year: 2026, kk_type: type, data_payload: payload }]);
+          .insert([{ fiscal_year: selectedYear, kk_type: activeSheet.dbType, data_payload: payload }]);
         error = err;
       }
 
       if (error) throw error;
-      alert(`Data ${activeTab.toUpperCase()} berhasil disimpan!`);
+      alert(`Data Kertas Kerja ${activeSheet.name} berhasil disimpan!`);
       fetchAchievementData();
     } catch (err) {
       console.error('Error saving achievement data:', err);
@@ -135,27 +171,30 @@ export default function Achievements({ profile }) {
     }
   };
 
-  const filteredTabs = SHEETS.filter(s => s.roles.includes(userRole));
+  const activeSheet = SHEETS.find(s => s.id === activeTab);
+  const isAuthorized = activeSheet?.roles.includes(userRole);
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
+    <div className="p-8 max-w-7xl mx-auto space-y-8">
       
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-900 leading-tight">Capaian & Hasil Audit (KK5 - KK8)</h1>
-        <p className="text-sm text-slate-500 mt-1">Kelola data capaian sasaran daerah (outcome/output), opini laporan keuangan BPK, serta catatan aset dan ketaatan hukum.</p>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-slate-200 pb-6 space-y-4 md:space-y-0">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900 leading-tight">Evaluasi Capaian & Hasil (KK5.1 - KK8)</h1>
+          <p className="text-sm text-slate-500 mt-1">Rincian kertas kerja penilaian mandiri untuk mengukur efektivitas perbaikan tata kelola regional.</p>
+        </div>
       </div>
 
-      {/* Tab select */}
-      <div className="flex border border-slate-200/60 mb-6 bg-white p-1 rounded-xl shadow-sm space-x-1">
-        {filteredTabs.map(s => (
+      {/* Tabs Menu Navigation */}
+      <div className="flex border border-slate-200/60 bg-white p-1 rounded-xl shadow-sm space-x-1 overflow-x-auto">
+        {SHEETS.map(s => (
           <button
             key={s.id}
             onClick={() => setActiveTab(s.id)}
-            className={`flex-1 py-2 text-center text-xs font-semibold rounded-lg transition-all duration-200 ${
+            className={`flex-1 min-w-[120px] py-2.5 text-center text-xs font-bold rounded-lg transition-all duration-200 ${
               activeTab === s.id 
-                ? 'bg-sky-600 text-white shadow-sm' 
-                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                ? 'bg-sky-600 text-white shadow-md' 
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
             }`}
           >
             {s.name}
@@ -163,236 +202,829 @@ export default function Achievements({ profile }) {
         ))}
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-        {loading ? (
-          <div className="py-12 flex items-center justify-center">
-            <div className="flex flex-col items-center space-y-3">
-              <div className="h-8 w-8 animate-spin rounded-full border-3 border-sky-500 border-t-transparent"></div>
-              <p className="text-xs text-slate-500">Memuat data formulir...</p>
-            </div>
+      {/* Authorization Alert */}
+      {!isAuthorized ? (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 p-6 rounded-xl flex items-center space-x-3">
+          <AlertTriangle size={24} className="text-amber-600" />
+          <div>
+            <h3 className="font-bold text-sm">Mode Pratinjau (ReadOnly)</h3>
+            <p className="text-xs mt-0.5">Peran Anda ({userRole}) tidak memiliki otorisasi untuk mengedit lembar kerja ini. Anda hanya dapat melihat data.</p>
           </div>
-        ) : (
-          <form onSubmit={handleSave} className="space-y-6">
-            
-            {/* KK 5 Panel */}
-            {activeTab === 'kk5' && (
-              <div className="space-y-4">
-                <div className="p-4 bg-sky-50 border border-sky-100 rounded-xl flex items-start space-x-2 text-sky-700 text-xs leading-relaxed mb-4">
-                  <BarChart3 size={16} className="mt-0.5" />
-                  <span>
-                    Form ini merekam hasil simpulan akhir dari capaian Sasaran Strategis Pemda (`KK 5.1 A`), Sasaran Strategis OPD (`KK 5.1 B`), dan Capaian Output (`KK 5.2`).
-                  </span>
-                </div>
+        </div>
+      ) : null}
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Grade Capaian Sasaran Pemda (KK 5.1 A)</label>
-                  <select
-                    value={kk5PemdaOutcome}
-                    onChange={(e) => setKk5PemdaOutcome(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-sky-500/20"
-                  >
-                    <option value="A">Grade A (Capaian ≥ 90%)</option>
-                    <option value="B">Grade B (Capaian 70% s.d 89%)</option>
-                    <option value="C">Grade C (Capaian 50% s.d 69%)</option>
-                    <option value="D">Grade D (Capaian 30% s.d 49%)</option>
-                    <option value="E">Grade E (Capaian &lt; 30%)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Grade Capaian Sasaran OPD (KK 5.1 B)</label>
-                  <select
-                    value={kk5OpdOutcome}
-                    onChange={(e) => setKk5OpdOutcome(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-sky-500/20"
-                  >
-                    <option value="A">Grade A (Capaian ≥ 90%)</option>
-                    <option value="B">Grade B (Capaian 70% s.d 89%)</option>
-                    <option value="C">Grade C (Capaian 50% s.d 69%)</option>
-                    <option value="D">Grade D (Capaian 30% s.d 49%)</option>
-                    <option value="E">Grade E (Capaian &lt; 30%)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Grade Capaian Output Kegiatan (KK 5.2)</label>
-                  <select
-                    value={kk5Output}
-                    onChange={(e) => setKk5Output(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-sky-500/20"
-                  >
-                    <option value="A">Grade A (Capaian ≥ 90%)</option>
-                    <option value="B">Grade B (Capaian 70% s.d 89%)</option>
-                    <option value="C">Grade C (Capaian 50% s.d 69%)</option>
-                    <option value="D">Grade D (Capaian 30% s.d 49%)</option>
-                    <option value="E">Grade E (Capaian &lt; 30%)</option>
-                  </select>
-                </div>
+      <form onSubmit={handleSave} className="space-y-6">
+        
+        {/* SUMMARY METRICS BLOCK */}
+        <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-lg border border-slate-800 space-y-4">
+          <h3 className="font-bold text-xs uppercase tracking-wider text-slate-400">Simpulan Lembar Kerja &amp; Parameter Dashboard</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {activeTab === 'kk51a' && (
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Grade Capaian Sasaran Pemda</label>
+                <select
+                  disabled={!isAuthorized}
+                  value={summary.pemda_outcome || 'B'}
+                  onChange={(e) => handleSummaryChange('pemda_outcome', e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg text-xs p-2 text-white"
+                >
+                  <option value="A">Grade A (Capaian ≥ 90%)</option>
+                  <option value="B">Grade B (Capaian 70% s.d 89%)</option>
+                  <option value="C">Grade C (Capaian 50% s.d 69%)</option>
+                  <option value="D">Grade D (Capaian 30% s.d 49%)</option>
+                  <option value="E">Grade E (Capaian &lt; 30%)</option>
+                </select>
               </div>
             )}
 
-            {/* KK 6 Panel */}
+            {activeTab === 'kk51b' && (
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Grade Capaian Sasaran OPD</label>
+                <select
+                  disabled={!isAuthorized}
+                  value={summary.opd_outcome || 'B'}
+                  onChange={(e) => handleSummaryChange('opd_outcome', e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg text-xs p-2 text-white"
+                >
+                  <option value="A">Grade A (Capaian ≥ 90%)</option>
+                  <option value="B">Grade B (Capaian 70% s.d 89%)</option>
+                  <option value="C">Grade C (Capaian 50% s.d 69%)</option>
+                  <option value="D">Grade D (Capaian 30% s.d 49%)</option>
+                  <option value="E">Grade E (Capaian &lt; 30%)</option>
+                </select>
+              </div>
+            )}
+
+            {activeTab === 'kk52' && (
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Grade Capaian Output</label>
+                <select
+                  disabled={!isAuthorized}
+                  value={summary.output || 'C'}
+                  onChange={(e) => handleSummaryChange('output', e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg text-xs p-2 text-white"
+                >
+                  <option value="A">Grade A (Capaian ≥ 90%)</option>
+                  <option value="B">Grade B (Capaian 70% s.d 89%)</option>
+                  <option value="C">Grade C (Capaian 50% s.d 69%)</option>
+                  <option value="D">Grade D (Capaian 30% s.d 49%)</option>
+                  <option value="E">Grade E (Capaian &lt; 30%)</option>
+                </select>
+              </div>
+            )}
+
             {activeTab === 'kk6' && (
-              <div className="space-y-4">
-                <div className="p-4 bg-sky-50 border border-sky-100 rounded-xl flex items-start space-x-2 text-sky-700 text-xs leading-relaxed mb-4">
-                  <FileCheck size={16} className="mt-0.5" />
-                  <span>
-                    Form ini merekam hasil pemeriksaan Laporan Keuangan Pemerintah Daerah oleh BPK RI. Opini ini menentukan nilai Keandalan Pelaporan Keuangan.
-                  </span>
+              <>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Opini BPK RI 2025</label>
+                  <select
+                    disabled={!isAuthorized}
+                    value={summary.opini_2025 || 'WTP'}
+                    onChange={(e) => handleSummaryChange('opini_2025', e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg text-xs p-2 text-white"
+                  >
+                    <option value="WTP">WTP (Wajar Tanpa Pengecualian)</option>
+                    <option value="WDP">WDP (Wajar Dengan Pengecualian)</option>
+                    <option value="TW">TW (Tidak Wajar)</option>
+                    <option value="TMP">TMP (Tidak Memberikan Pendapat)</option>
+                  </select>
                 </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Opini BPK RI Tahun 2025</label>
-                    <select
-                      value={kk6Opini2025}
-                      onChange={(e) => setKk6Opini2025(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-sky-500/20"
-                    >
-                      <option value="WTP">WTP (Wajar Tanpa Pengecualian)</option>
-                      <option value="WDP">WDP (Wajar Dengan Pengecualian)</option>
-                      <option value="TW">TW (Tidak Wajar)</option>
-                      <option value="TMP">TMP (Tidak Memberikan Pendapat)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Opini BPK RI Tahun 2024</label>
-                    <select
-                      value={kk6Opini2024}
-                      onChange={(e) => setKk6Opini2024(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-sky-500/20"
-                    >
-                      <option value="WTP">WTP (Wajar Tanpa Pengecualian)</option>
-                      <option value="WDP">WDP (Wajar Dengan Pengecualian)</option>
-                      <option value="TW">TW (Tidak Wajar)</option>
-                      <option value="TMP">TMP (Tidak Memberikan Pendapat)</option>
-                    </select>
-                  </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Jumlah Temuan Kelemahan SPI</label>
+                  <input
+                    disabled={!isAuthorized}
+                    type="number"
+                    value={summary.temuan_count || 0}
+                    onChange={(e) => handleSummaryChange('temuan_count', parseInt(e.target.value) || 0)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg text-xs p-2 text-white"
+                  />
                 </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Jumlah Temuan Kelemahan SPI</label>
-                    <input
-                      type="number"
-                      required
-                      min="0"
-                      value={kk6TemuanCount}
-                      onChange={(e) => setKk6TemuanCount(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-sky-500/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Nilai Temuan Kerugian Daerah (Rp)</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="0"
-                      value={kk6TemuanRupiah}
-                      onChange={(e) => setKk6TemuanRupiah(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-sky-500/20"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nilai Temuan Kerugian Daerah (Rp)</label>
+                  <input
+                    disabled={!isAuthorized}
+                    type="text"
+                    value={summary.temuan_rupiah || '0'}
+                    onChange={(e) => handleSummaryChange('temuan_rupiah', e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg text-xs p-2 text-white"
+                  />
                 </div>
-              </div>
+              </>
             )}
 
-            {/* KK 7 Panel */}
             {activeTab === 'kk7' && (
-              <div className="space-y-4">
+              <>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Persentase Aset Tetap Dalam Kondisi Baik (%)</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">BMN Kondisi Baik (%)</label>
                   <input
+                    disabled={!isAuthorized}
                     type="number"
-                    required
-                    min="0"
-                    max="100"
-                    value={kk7KondisiBaik}
-                    onChange={(e) => setKk7KondisiBaik(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-sky-500/20"
+                    value={summary.kondisi_baik || 90}
+                    onChange={(e) => handleSummaryChange('kondisi_baik', e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg text-xs p-2 text-white"
                   />
                 </div>
-
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Simpulan Grade Permasalahan Aset (LHP BPK)</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Grade Permasalahan Aset</label>
                   <select
-                    value={kk7TemuanAset}
-                    onChange={(e) => setKk7TemuanAset(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-sky-500/20"
+                    disabled={!isAuthorized}
+                    value={summary.temuan_aset || 'C'}
+                    onChange={(e) => handleSummaryChange('temuan_aset', e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg text-xs p-2 text-white"
                   >
-                    <option value="A">Grade A (Selama 5 tahun bebas masalah hukum aset)</option>
-                    <option value="B">Grade B (Selama 3 tahun bebas masalah hukum aset)</option>
-                    <option value="C">Grade C (Selama 2 tahun bebas masalah hukum aset)</option>
-                    <option value="D">Grade D (Ada masalah hukum aset dalam 2 tahun terakhir)</option>
-                    <option value="E">Grade E (Banyak masalah hukum / tidak ada pengamanan)</option>
+                    <option value="A">Grade A (Bebas Masalah Aset 5 Thn)</option>
+                    <option value="B">Grade B (Bebas Masalah Aset 3 Thn)</option>
+                    <option value="C">Grade C (Bebas Masalah Aset 2 Thn)</option>
+                    <option value="D">Grade D (Masalah Aset 2 Thn Terakhir)</option>
+                    <option value="E">Grade E (Banyak Aset Bermasalah Hukum)</option>
                   </select>
                 </div>
-
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Uraian Catatan Permasalahan Aset</label>
-                  <textarea
-                    rows="3"
-                    placeholder="Catat temuan administrasi, pengamanan fisik, sertifikasi tanah jalan, atau kehilangan BMD..."
-                    value={kk7UraianAset}
-                    onChange={(e) => setKk7UraianAset(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-sky-500/20 resize-none"
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Uraian Catatan Aset</label>
+                  <input
+                    disabled={!isAuthorized}
+                    type="text"
+                    value={summary.uraian_aset || ''}
+                    onChange={(e) => handleSummaryChange('uraian_aset', e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg text-xs p-2 text-white"
                   />
                 </div>
-              </div>
+              </>
             )}
 
-            {/* KK 8 Panel */}
             {activeTab === 'kk8' && (
-              <div className="space-y-4">
-                <div className="p-4 bg-sky-50 border border-sky-100 rounded-xl flex items-start space-x-2 text-sky-700 text-xs leading-relaxed mb-4">
-                  <ShieldCheck size={16} className="mt-0.5" />
-                  <span>
-                    Form ini merekam hasil audit ketaatan peraturan dan adanya tindak pidana korupsi yang melibatkan pejabat daerah.
-                  </span>
-                </div>
-
+              <>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Jumlah Temuan Ketidakpatuhan Peraturan (LHP BPK)</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Jumlah Temuan Ketidakpatuhan</label>
                   <input
+                    disabled={!isAuthorized}
                     type="number"
-                    required
-                    min="0"
-                    value={kk8TemuanCount}
-                    onChange={(e) => setKk8TemuanCount(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-sky-500/20"
+                    value={summary.temuan_count || 0}
+                    onChange={(e) => handleSummaryChange('temuan_count', parseInt(e.target.value) || 0)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg text-xs p-2 text-white"
                   />
                 </div>
-
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Keterjadian Tindak Pidana Korupsi oleh Pejabat Eselon I/II/Politis</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Kejadian Tindak Pidana Korupsi</label>
                   <select
-                    value={kk8Korupsi}
-                    onChange={(e) => setKk8Korupsi(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:ring-2 focus:ring-sky-500/20"
+                    disabled={!isAuthorized}
+                    value={summary.korupsi || 'Tidak'}
+                    onChange={(e) => handleSummaryChange('korupsi', e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg text-xs p-2 text-white"
                   >
-                    <option value="Tidak">Tidak Ada Kejadian Korupsi</option>
-                    <option value="Ya">Ada Kejadian Korupsi</option>
+                    <option value="Tidak">Tidak Ada</option>
+                    <option value="Ya">Ada Korupsi</option>
                   </select>
                 </div>
-              </div>
+              </>
             )}
+          </div>
+        </div>
 
-            {/* Save Button */}
-            <div className="pt-4 border-t border-slate-100 flex items-center justify-end">
+        {/* DETAILED TABLES BLOCK */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          
+          <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+            <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wide">
+              Data Tabel {activeSheet?.name}
+            </h3>
+            
+            {isAuthorized && (
+              <button
+                type="button"
+                onClick={addRow}
+                className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-[10px] font-bold transition-all flex items-center space-x-1"
+              >
+                <Plus size={12} />
+                <span>Tambah Baris</span>
+              </button>
+            )}
+          </div>
+
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+            {loading ? (
+              <div className="py-12 text-center text-xs text-slate-400">Loading rows...</div>
+            ) : rows.length === 0 ? (
+              <div className="py-12 text-center text-xs text-slate-400">Tabel Kosong. Silakan tambah baris baru.</div>
+            ) : (
+              <table className="w-full text-left border-collapse text-xs">
+                
+                {/* 1. TABLE: KK 5.1 A */}
+                {activeTab === 'kk51a' && (
+                  <>
+                    <thead>
+                      <tr className="bg-slate-100 border-b border-slate-200 font-bold text-slate-500 text-[10px] uppercase">
+                        <th className="p-3 w-[60px] text-center">No</th>
+                        <th className="p-3 w-[220px]">Sasaran Strategis Pemda</th>
+                        <th className="p-3 w-[220px]">Indikator Kinerja</th>
+                        <th className="p-3 w-[70px] text-center">Sastra Tepat</th>
+                        <th className="p-3 w-[70px] text-center">IK Tepat</th>
+                        <th className="p-3 w-[70px] text-center">Data Andal</th>
+                        <th className="p-3 w-[70px] text-center">PM</th>
+                        <th className="p-3 w-[90px] text-center">Target</th>
+                        <th className="p-3 w-[90px] text-center">Realisasi</th>
+                        <th className="p-3 w-[90px] text-center">Persentase</th>
+                        <th className="p-3 w-[90px] text-center">Nilai Capaian</th>
+                        {isAuthorized && <th className="p-3 w-[60px] text-center">Aksi</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150">
+                      {rows.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/50">
+                          <td className="p-2 text-center">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.no}
+                              onChange={(e) => handleCellChange(idx, 'no', e.target.value)}
+                              className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.sasaran}
+                              onChange={(e) => handleCellChange(idx, 'sasaran', e.target.value)}
+                              className="w-full bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.indikator}
+                              onChange={(e) => handleCellChange(idx, 'indikator', e.target.value)}
+                              className="w-full bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            />
+                          </td>
+                          <td className="p-2 text-center">
+                            <select
+                              disabled={!isAuthorized}
+                              value={row.sasaranTepat}
+                              onChange={(e) => handleCellChange(idx, 'sasaranTepat', e.target.value)}
+                              className="bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            >
+                              <option value="Y">Y</option>
+                              <option value="T">T</option>
+                            </select>
+                          </td>
+                          <td className="p-2 text-center">
+                            <select
+                              disabled={!isAuthorized}
+                              value={row.ikTepat}
+                              onChange={(e) => handleCellChange(idx, 'ikTepat', e.target.value)}
+                              className="bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            >
+                              <option value="Y">Y</option>
+                              <option value="T">T</option>
+                            </select>
+                          </td>
+                          <td className="p-2 text-center">
+                            <select
+                              disabled={!isAuthorized}
+                              value={row.dataAndal}
+                              onChange={(e) => handleCellChange(idx, 'dataAndal', e.target.value)}
+                              className="bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            >
+                              <option value="Y">Y</option>
+                              <option value="T">T</option>
+                            </select>
+                          </td>
+                          <td className="p-2 text-center">
+                            <select
+                              disabled={!isAuthorized}
+                              value={row.pm}
+                              onChange={(e) => handleCellChange(idx, 'pm', e.target.value)}
+                              className="bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            >
+                              <option value="Y">Y</option>
+                              <option value="T">T</option>
+                            </select>
+                          </td>
+                          <td className="p-2 text-center">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.target}
+                              onChange={(e) => handleCellChange(idx, 'target', e.target.value)}
+                              className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            />
+                          </td>
+                          <td className="p-2 text-center">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.realisasi}
+                              onChange={(e) => handleCellChange(idx, 'realisasi', e.target.value)}
+                              className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            />
+                          </td>
+                          <td className="p-2 text-center">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.persentase}
+                              onChange={(e) => handleCellChange(idx, 'persentase', e.target.value)}
+                              className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            />
+                          </td>
+                          <td className="p-2 text-center font-semibold text-slate-800">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.nilai}
+                              onChange={(e) => handleCellChange(idx, 'nilai', e.target.value)}
+                              className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            />
+                          </td>
+                          {isAuthorized && (
+                            <td className="p-2 text-center">
+                              <button type="button" onClick={() => deleteRow(idx)} className="text-red-500 hover:text-red-700">
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </>
+                )}
+
+                {/* 2. TABLE: KK 5.1 B */}
+                {activeTab === 'kk51b' && (
+                  <>
+                    <thead>
+                      <tr className="bg-slate-100 border-b border-slate-200 font-bold text-slate-500 text-[10px] uppercase">
+                        <th className="p-3 w-[60px] text-center">No</th>
+                        <th className="p-3 w-[150px]">Sasaran Pemda</th>
+                        <th className="p-3 w-[150px]">Instansi OPD</th>
+                        <th className="p-3 w-[150px]">Sasaran OPD</th>
+                        <th className="p-3 w-[150px]">Indikator OPD</th>
+                        <th className="p-3 w-[80px] text-center">Target</th>
+                        <th className="p-3 w-[80px] text-center">Realisasi</th>
+                        <th className="p-3 w-[60px] text-center">Relevan</th>
+                        <th className="p-3 w-[60px] text-center">Sastra Tepat</th>
+                        <th className="p-3 w-[60px] text-center">IK Tepat</th>
+                        <th className="p-3 w-[60px] text-center">Data Andal</th>
+                        <th className="p-3 w-[60px] text-center">PM</th>
+                        {isAuthorized && <th className="p-3 w-[60px] text-center">Aksi</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150">
+                      {rows.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/50">
+                          <td className="p-2 text-center">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.no}
+                              onChange={(e) => handleCellChange(idx, 'no', e.target.value)}
+                              className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.sasaranPemda}
+                              onChange={(e) => handleCellChange(idx, 'sasaranPemda', e.target.value)}
+                              className="w-full bg-transparent border-0 focus:ring-1 focus:ring-sky-500 text-[11px]"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <select
+                              disabled={!isAuthorized}
+                              value={row.opdName}
+                              onChange={(e) => handleCellChange(idx, 'opdName', e.target.value)}
+                              className="w-full bg-transparent border-0 focus:ring-1 focus:ring-sky-500 text-[11px]"
+                            >
+                              <option value="">Pilih OPD...</option>
+                              {opds.map(o => <option key={o.id} value={o.name_opd}>{o.name_opd}</option>)}
+                            </select>
+                          </td>
+                          <td className="p-2">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.sasaranOpd}
+                              onChange={(e) => handleCellChange(idx, 'sasaranOpd', e.target.value)}
+                              className="w-full bg-transparent border-0 focus:ring-1 focus:ring-sky-500 text-[11px]"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.indikatorOpd}
+                              onChange={(e) => handleCellChange(idx, 'indikatorOpd', e.target.value)}
+                              className="w-full bg-transparent border-0 focus:ring-1 focus:ring-sky-500 text-[11px]"
+                            />
+                          </td>
+                          <td className="p-2 text-center">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.target}
+                              onChange={(e) => handleCellChange(idx, 'target', e.target.value)}
+                              className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            />
+                          </td>
+                          <td className="p-2 text-center">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.realisasi}
+                              onChange={(e) => handleCellChange(idx, 'realisasi', e.target.value)}
+                              className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            />
+                          </td>
+                          <td className="p-2 text-center">
+                            <select
+                              disabled={!isAuthorized}
+                              value={row.relevan}
+                              onChange={(e) => handleCellChange(idx, 'relevan', e.target.value)}
+                              className="bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            >
+                              <option value="Y">Y</option>
+                              <option value="T">T</option>
+                            </select>
+                          </td>
+                          {['sasaranTepat', 'ikTepat', 'dataAndal', 'pm'].map(field => (
+                            <td key={field} className="p-2 text-center">
+                              <select
+                                disabled={!isAuthorized}
+                                value={row[field] || 'Y'}
+                                onChange={(e) => handleCellChange(idx, field, e.target.value)}
+                                className="bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                              >
+                                <option value="Y">Y</option>
+                                <option value="T">T</option>
+                              </select>
+                            </td>
+                          ))}
+                          {isAuthorized && (
+                            <td className="p-2 text-center">
+                              <button type="button" onClick={() => deleteRow(idx)} className="text-red-500 hover:text-red-700">
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </>
+                )}
+
+                {/* 3. TABLE: KK 5.2 */}
+                {activeTab === 'kk52' && (
+                  <>
+                    <thead>
+                      <tr className="bg-slate-100 border-b border-slate-200 font-bold text-slate-500 text-[10px] uppercase">
+                        <th className="p-3 w-[60px] text-center">No</th>
+                        <th className="p-3">Sasaran Pemda</th>
+                        <th className="p-3">Instansi OPD</th>
+                        <th className="p-3">Sasaran OPD</th>
+                        <th className="p-3">Sasaran Program</th>
+                        <th className="p-3">Nama Program</th>
+                        <th className="p-3">Nama Output</th>
+                        {isAuthorized && <th className="p-3 w-[60px] text-center">Aksi</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150">
+                      {rows.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/50">
+                          <td className="p-2 text-center">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.no}
+                              onChange={(e) => handleCellChange(idx, 'no', e.target.value)}
+                              className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            />
+                          </td>
+                          {['sasaranPemda', 'opdName', 'sasaranOpd', 'sasaranProgram', 'programName', 'outputName'].map(field => (
+                            <td key={field} className="p-2">
+                              {field === 'opdName' ? (
+                                <select
+                                  disabled={!isAuthorized}
+                                  value={row.opdName}
+                                  onChange={(e) => handleCellChange(idx, 'opdName', e.target.value)}
+                                  className="w-full bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                                >
+                                  <option value="">Pilih OPD...</option>
+                                  {opds.map(o => <option key={o.id} value={o.name_opd}>{o.name_opd}</option>)}
+                                </select>
+                              ) : (
+                                <input
+                                  disabled={!isAuthorized}
+                                  type="text"
+                                  value={row[field]}
+                                  onChange={(e) => handleCellChange(idx, field, e.target.value)}
+                                  className="w-full bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                                />
+                              )}
+                            </td>
+                          ))}
+                          {isAuthorized && (
+                            <td className="p-2 text-center">
+                              <button type="button" onClick={() => deleteRow(idx)} className="text-red-500 hover:text-red-700">
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </>
+                )}
+
+                {/* 4. TABLE: KK 6 */}
+                {activeTab === 'kk6' && (
+                  <>
+                    <thead>
+                      <tr className="bg-slate-100 border-b border-slate-200 font-bold text-slate-500 text-[10px] uppercase">
+                        <th className="p-3 w-[50px] text-center" rowSpan="2">No</th>
+                        <th className="p-3 text-center border-r border-slate-200" colSpan="6">Tahun 2025 (Evaluasi)</th>
+                        <th className="p-3 text-center" colSpan="6">Tahun 2024 (LHP BPK)</th>
+                        {isAuthorized && <th className="p-3 w-[50px] text-center" rowSpan="2">Aksi</th>}
+                      </tr>
+                      <tr className="bg-slate-50 border-b border-slate-200 font-bold text-slate-400 text-[9px] uppercase">
+                        <th className="p-2">Opini</th>
+                        <th className="p-2">Klasifikasi</th>
+                        <th className="p-2">Uraian Temuan</th>
+                        <th className="p-2">Rupiah</th>
+                        <th className="p-2">Penyebab</th>
+                        <th className="p-2 border-r border-slate-200">Sub Unsur</th>
+                        <th className="p-2">Opini</th>
+                        <th className="p-2">Klasifikasi</th>
+                        <th className="p-2">Uraian Temuan</th>
+                        <th className="p-2">Rupiah</th>
+                        <th className="p-2">Penyebab</th>
+                        <th className="p-2">Sub Unsur</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150 text-[11px]">
+                      {rows.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/50">
+                          <td className="p-2 text-center">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.no}
+                              onChange={(e) => handleCellChange(idx, 'no', e.target.value)}
+                              className="w-full text-center bg-transparent border-0 focus:ring-1 focus:ring-sky-500"
+                            />
+                          </td>
+                          {/* 2025 columns */}
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.opini2025} onChange={(e) => handleCellChange(idx, 'opini2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.klasifikasi2025} onChange={(e) => handleCellChange(idx, 'klasifikasi2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.uraian2025} onChange={(e) => handleCellChange(idx, 'uraian2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.nilai2025} onChange={(e) => handleCellChange(idx, 'nilai2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.penyebab2025} onChange={(e) => handleCellChange(idx, 'penyebab2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2 border-r border-slate-200">
+                            <input disabled={!isAuthorized} type="text" value={row.subunsur2025} onChange={(e) => handleCellChange(idx, 'subunsur2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          {/* 2024 columns */}
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.opini2024} onChange={(e) => handleCellChange(idx, 'opini2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.klasifikasi2024} onChange={(e) => handleCellChange(idx, 'klasifikasi2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.uraian2024} onChange={(e) => handleCellChange(idx, 'uraian2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.nilai2024} onChange={(e) => handleCellChange(idx, 'nilai2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.penyebab2024} onChange={(e) => handleCellChange(idx, 'penyebab2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.subunsur2024} onChange={(e) => handleCellChange(idx, 'subunsur2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          {isAuthorized && (
+                            <td className="p-2 text-center">
+                              <button type="button" onClick={() => deleteRow(idx)} className="text-red-500 hover:text-red-700">
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </>
+                )}
+
+                {/* 5. TABLE: KK 7 */}
+                {activeTab === 'kk7' && (
+                  <>
+                    <thead>
+                      <tr className="bg-slate-100 border-b border-slate-200 font-bold text-slate-500 text-[10px] uppercase">
+                        <th className="p-3 w-[50px] text-center" rowSpan="2">No</th>
+                        <th className="p-3 text-center border-r border-slate-200" colSpan="7">Tahun 2025 (Evaluasi)</th>
+                        <th className="p-3 text-center" colSpan="5">Tahun 2024 (LHP BPK)</th>
+                        {isAuthorized && <th className="p-3 w-[50px] text-center" rowSpan="2">Aksi</th>}
+                      </tr>
+                      <tr className="bg-slate-50 border-b border-slate-200 font-bold text-slate-400 text-[9px] uppercase">
+                        <th className="p-2">Opini</th>
+                        <th className="p-2">Kondisi Baik</th>
+                        <th className="p-2">Klasifikasi</th>
+                        <th className="p-2">Uraian Temuan</th>
+                        <th className="p-2">Rupiah</th>
+                        <th className="p-2">Penyebab</th>
+                        <th className="p-2 border-r border-slate-200">Sub Unsur</th>
+                        <th className="p-2">Opini</th>
+                        <th className="p-2">Kondisi Baik</th>
+                        <th className="p-2">Klasifikasi</th>
+                        <th className="p-2">Uraian Temuan</th>
+                        <th className="p-2">Rupiah</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150 text-[11px]">
+                      {rows.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/50">
+                          <td className="p-2 text-center">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.no}
+                              onChange={(e) => handleCellChange(idx, 'no', e.target.value)}
+                              className="w-full text-center bg-transparent border-0 focus:ring-1"
+                            />
+                          </td>
+                          {/* 2025 columns */}
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.opini2025} onChange={(e) => handleCellChange(idx, 'opini2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.kondisiBaik2025} onChange={(e) => handleCellChange(idx, 'kondisiBaik2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.klasifikasi2025} onChange={(e) => handleCellChange(idx, 'klasifikasi2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.uraian2025} onChange={(e) => handleCellChange(idx, 'uraian2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.nilai2025} onChange={(e) => handleCellChange(idx, 'nilai2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.penyebab2025} onChange={(e) => handleCellChange(idx, 'penyebab2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2 border-r border-slate-200">
+                            <input disabled={!isAuthorized} type="text" value={row.subunsur2025} onChange={(e) => handleCellChange(idx, 'subunsur2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          {/* 2024 columns */}
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.opini2024} onChange={(e) => handleCellChange(idx, 'opini2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.kondisiBaik2024} onChange={(e) => handleCellChange(idx, 'kondisiBaik2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.klasifikasi2024} onChange={(e) => handleCellChange(idx, 'klasifikasi2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.uraian2024} onChange={(e) => handleCellChange(idx, 'uraian2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.nilai2024} onChange={(e) => handleCellChange(idx, 'nilai2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          {isAuthorized && (
+                            <td className="p-2 text-center">
+                              <button type="button" onClick={() => deleteRow(idx)} className="text-red-500 hover:text-red-700">
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </>
+                )}
+
+                {/* 6. TABLE: KK 8 */}
+                {activeTab === 'kk8' && (
+                  <>
+                    <thead>
+                      <tr className="bg-slate-100 border-b border-slate-200 font-bold text-slate-500 text-[10px] uppercase">
+                        <th className="p-3 w-[50px] text-center" rowSpan="2">No</th>
+                        <th className="p-3 text-center border-r border-slate-200" colSpan="6">Tahun 2025 (Evaluasi)</th>
+                        <th className="p-3 text-center" colSpan="6">Tahun 2024 (LHP BPK)</th>
+                        {isAuthorized && <th className="p-3 w-[50px] text-center" rowSpan="2">Aksi</th>}
+                      </tr>
+                      <tr className="bg-slate-50 border-b border-slate-200 font-bold text-slate-400 text-[9px] uppercase">
+                        <th className="p-2">Opini</th>
+                        <th className="p-2">Klasifikasi</th>
+                        <th className="p-2">Uraian Temuan</th>
+                        <th className="p-2">Rupiah</th>
+                        <th className="p-2">Penyebab</th>
+                        <th className="p-2 border-r border-slate-200">Sub Unsur</th>
+                        <th className="p-2">Opini</th>
+                        <th className="p-2">Klasifikasi</th>
+                        <th className="p-2">Uraian Temuan</th>
+                        <th className="p-2">Rupiah</th>
+                        <th className="p-2">Penyebab</th>
+                        <th className="p-2">Sub Unsur</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150 text-[11px]">
+                      {rows.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/50">
+                          <td className="p-2 text-center">
+                            <input
+                              disabled={!isAuthorized}
+                              type="text"
+                              value={row.no}
+                              onChange={(e) => handleCellChange(idx, 'no', e.target.value)}
+                              className="w-full text-center bg-transparent border-0 focus:ring-1"
+                            />
+                          </td>
+                          {/* 2025 columns */}
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.opini2025} onChange={(e) => handleCellChange(idx, 'opini2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.klasifikasi2025} onChange={(e) => handleCellChange(idx, 'klasifikasi2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.uraian2025} onChange={(e) => handleCellChange(idx, 'uraian2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.nilai2025} onChange={(e) => handleCellChange(idx, 'nilai2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.penyebab2025} onChange={(e) => handleCellChange(idx, 'penyebab2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2 border-r border-slate-200">
+                            <input disabled={!isAuthorized} type="text" value={row.subunsur2025} onChange={(e) => handleCellChange(idx, 'subunsur2025', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          {/* 2024 columns */}
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.opini2024} onChange={(e) => handleCellChange(idx, 'opini2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.klasifikasi2024} onChange={(e) => handleCellChange(idx, 'klasifikasi2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.uraian2024} onChange={(e) => handleCellChange(idx, 'uraian2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.nilai2024} onChange={(e) => handleCellChange(idx, 'nilai2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.penyebab2024} onChange={(e) => handleCellChange(idx, 'penyebab2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          <td className="p-2">
+                            <input disabled={!isAuthorized} type="text" value={row.subunsur2024} onChange={(e) => handleCellChange(idx, 'subunsur2024', e.target.value)} className="w-full bg-transparent border-0 focus:ring-1" />
+                          </td>
+                          {isAuthorized && (
+                            <td className="p-2 text-center">
+                              <button type="button" onClick={() => deleteRow(idx)} className="text-red-500 hover:text-red-700">
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </>
+                )}
+
+              </table>
+            )}
+          </div>
+
+          {/* Table Save Section */}
+          {isAuthorized && rows.length > 0 && (
+            <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-end">
               <button
                 type="submit"
                 disabled={saving}
-                className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-sky-600/10 hover:shadow-lg hover:shadow-sky-500/15 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 flex items-center space-x-1.5"
+                className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold shadow-md shadow-sky-600/10 hover:shadow-lg hover:shadow-sky-500/15 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all flex items-center space-x-1.5"
               >
                 <Save size={16} />
-                <span>{saving ? 'Menyimpan...' : 'Simpan Data'}</span>
+                <span>{saving ? 'Menyimpan...' : 'Simpan Kertas Kerja'}</span>
               </button>
             </div>
+          )}
 
-          </form>
-        )}
-      </div>
+        </div>
 
+      </form>
     </div>
   );
 }

@@ -10,12 +10,23 @@ import PohonKinerja from './pages/PohonKinerja';
 import SubelementAssessments from './pages/SubelementAssessments';
 import VerificationPanel from './pages/VerificationPanel';
 import Achievements from './pages/Achievements';
+import UserManagement from './pages/UserManagement';
 
 export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   
+  // Selected assessment period (year)
+  const [selectedYear, setSelectedYear] = useState(() => {
+    return parseInt(localStorage.getItem('spip_selected_year')) || 2026;
+  });
+
+  const changeSelectedYear = (year) => {
+    setSelectedYear(year);
+    localStorage.setItem('spip_selected_year', year);
+  };
+
   // Scoring mode: 'emulation' (BPKP sheet formula bugs) or 'correct' (proper averages)
   const [calculationMode, setCalculationMode] = useState(() => {
     return localStorage.getItem('spip_calc_mode') || 'emulation';
@@ -28,6 +39,16 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Check if mock session exists first
+    const mockSession = localStorage.getItem('mock_session');
+    const mockProfile = localStorage.getItem('mock_profile');
+    if (mockSession && mockProfile) {
+      setSession(JSON.parse(mockSession));
+      setProfile(JSON.parse(mockProfile));
+      setLoading(false);
+      return;
+    }
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -41,6 +62,17 @@ export default function App() {
     // Listen to auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
+        // If mock session is active, handle sign out event
+        if (localStorage.getItem('mock_session')) {
+          if (event === 'SIGNED_OUT') {
+            localStorage.removeItem('mock_session');
+            localStorage.removeItem('mock_profile');
+            setSession(null);
+            setProfile(null);
+          }
+          return;
+        }
+
         setSession(newSession);
         if (newSession) {
           fetchProfile(newSession.user.id);
@@ -100,7 +132,12 @@ export default function App() {
           element={
             session ? (
               <div className="flex min-h-screen bg-slate-50 font-sans antialiased text-slate-800">
-                <Sidebar user={session.user} profile={profile} />
+                <Sidebar 
+                  user={session.user} 
+                  profile={profile} 
+                  selectedYear={selectedYear} 
+                  setSelectedYear={changeSelectedYear} 
+                />
                 <main className="flex-1 overflow-x-hidden pb-12">
                   <Routes>
                     <Route 
@@ -110,24 +147,29 @@ export default function App() {
                           profile={profile} 
                           calculationMode={calculationMode} 
                           toggleCalculationMode={toggleCalculationMode} 
+                          selectedYear={selectedYear}
                         />
                       } 
                     />
                     <Route 
                       path="/pohon-kinerja" 
-                      element={<PohonKinerja profile={profile} />} 
+                      element={<PohonKinerja profile={profile} selectedYear={selectedYear} />} 
                     />
                     <Route 
                       path="/subelement-assessments" 
-                      element={<SubelementAssessments profile={profile} />} 
+                      element={<SubelementAssessments profile={profile} selectedYear={selectedYear} />} 
                     />
                     <Route 
                       path="/verification-panel" 
-                      element={<VerificationPanel profile={profile} />} 
+                      element={<VerificationPanel profile={profile} selectedYear={selectedYear} />} 
                     />
                     <Route 
                       path="/achievements" 
-                      element={<Achievements profile={profile} />} 
+                      element={<Achievements profile={profile} selectedYear={selectedYear} />} 
+                    />
+                    <Route 
+                      path="/user-management" 
+                      element={<UserManagement profile={profile} />} 
                     />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>

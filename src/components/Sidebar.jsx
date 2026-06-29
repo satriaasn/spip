@@ -13,12 +13,18 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
-export default function Sidebar({ user, profile }) {
+export default function Sidebar({ user, profile, selectedYear, setSelectedYear }) {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate('/login');
+    localStorage.removeItem('mock_session');
+    localStorage.removeItem('mock_profile');
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error('Logout error:', e);
+    }
+    window.location.href = '/login';
   };
 
   const role = profile?.role || 'OPD';
@@ -28,33 +34,39 @@ export default function Sidebar({ user, profile }) {
   const menuItems = [
     {
       path: '/',
-      name: 'Dashboard',
+      name: 'Simpulan Maturitas (KKLEAD_SPIP)',
       icon: LayoutDashboard,
       roles: ['ADMIN', 'BAPPEDA', 'BPKAD', 'INSPEKTORAT', 'OPD']
     },
     {
       path: '/pohon-kinerja',
-      name: 'Pohon Kinerja & KKE',
+      name: 'Kualitas Perencanaan (KKE 1.1 - 2.3)',
       icon: GitFork,
       roles: ['ADMIN', 'BAPPEDA', 'BPKAD', 'INSPEKTORAT', 'OPD']
     },
     {
       path: '/subelement-assessments',
-      name: 'Penilaian Subelement (KK3)',
+      name: 'Penilaian Subelement (KK3.1 - 3.4)',
       icon: CheckSquare,
       roles: ['ADMIN', 'BAPPEDA', 'BPKAD', 'INSPEKTORAT', 'OPD']
     },
     {
       path: '/verification-panel',
-      name: 'Panel Verifikasi Pemda',
+      name: 'Panel Verifikasi Pemda (KK3)',
       icon: ShieldAlert,
       roles: ['ADMIN', 'BAPPEDA', 'BPKAD', 'INSPEKTORAT']
     },
     {
       path: '/achievements',
-      name: 'Capaian & Audit (KK5-8)',
+      name: 'Capaian & Hasil (KK5.1 - KK8)',
       icon: BarChart3,
-      roles: ['ADMIN', 'BAPPEDA', 'BPKAD', 'INSPEKTORAT']
+      roles: ['ADMIN', 'BAPPEDA', 'BPKAD', 'INSPEKTORAT', 'OPD']
+    },
+    {
+      path: '/user-management',
+      name: 'Manajemen User & OPD',
+      icon: Settings,
+      roles: ['ADMIN']
     }
   ];
 
@@ -75,6 +87,21 @@ export default function Sidebar({ user, profile }) {
             Terintegrasi
           </span>
         </div>
+      </div>
+
+      {/* Year Selector */}
+      <div className="px-5 py-3 border-b border-slate-800 bg-slate-950/10 flex flex-col space-y-1">
+        <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Periode Penilaian (Tahun)</label>
+        <select
+          value={selectedYear}
+          onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+          className="w-full bg-slate-800/80 border border-slate-700/60 rounded-lg text-xs py-1.5 px-2.5 text-white focus:outline-none focus:border-sky-500 font-semibold"
+        >
+          <option value="2024">Tahun 2024</option>
+          <option value="2025">Tahun 2025</option>
+          <option value="2026">Tahun 2026 (Aktif)</option>
+          <option value="2027">Tahun 2027</option>
+        </select>
       </div>
 
       {/* User Information */}
